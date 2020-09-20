@@ -153,6 +153,7 @@ def handle_sample_switching(sample, my_worst_samples):
     elif sample.owner == ME and value_sample(sample) == BAD_SAMPLE:
         do.upload(sample.id)
         upload_count = 1
+        #OPTIMIZE: Find better thing to do with bad samples than upload (maybe continue but ignore sample for now)
     return upload_count
 
 
@@ -170,6 +171,7 @@ def handle_lab():
         return None
     go.molecules()
     return next(filter(lambda sample: sample.id != chosen_sample, me.samples)).id
+    #FIXME: consider remaining molecules and upload sample if unavailable
 
 
 def decompress_histogram_into_str(d):
