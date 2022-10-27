@@ -3,7 +3,6 @@ import math
 import string
 from functools import reduce
 
-# Bring data on patient samples from the diagnosis machine to the laboratory with enough molecules to produce medicine!
 ME = 0
 ENEMY = 1
 NO_DATA = -1
@@ -118,11 +117,12 @@ def handle_diagnosis():
         return
     remaining_molecules = calculate_remaining_molecules()
     best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=value_sample)[:3]
-    my_worst_samples = sorted(filter(lambda sample: sample.owner == ME, samples), key=value_sample, reverse=True)
-    upload_count = 0
+    my_worst_samples = sorted(me.samples, key=value_sample, reverse=True)
+    upload_count = len(me.samples)
+    debug(upload_count)
     for sample in best_samples:
-        upload_count += handle_sample_switching(sample, my_worst_samples)
-    if upload_count == MAX_SAMPLES:
+        upload_count -= handle_sample_switching(sample, my_worst_samples)
+    if not upload_count or not me.samples:
         go.samples()
         return
     go.molecules()
@@ -133,8 +133,10 @@ def handle_diagnosis():
 def calculate_remaining_molecules():
     cheap_enemy_samples = list(filter(lambda sample: sample.rank != 3, enemy.samples))
     for molecule in MOLECULES_LIST:
-        remaining_molecules[molecule] = available_molecules[molecule] - max(
-            list(map(lambda sample: sample.cost[molecule], cheap_enemy_samples)), default=0)
+        remaining_molecules[molecule] = available_molecules[molecule]
+        if (enemy.target == 'DIAGNOSIS' and enemy.eta == 0) or enemy.target == 'MOLECULES':
+            remaining_molecules[molecule] -= max(
+                list(map(lambda sample: sample.cost[molecule], cheap_enemy_samples)), default=0)
     return remaining_molecules
 
 
@@ -148,12 +150,14 @@ def value_sample(sample):
 def handle_sample_switching(sample, my_worst_samples):
     upload_count = 0
     if sample.owner != ME and value_sample(sample) != BAD_SAMPLE:
-        do.upload(my_worst_samples.pop(0).id)
-        do.download(sample.id)
+        if my_worst_samples:
+            do.upload(my_worst_samples.pop(0).id)
+            do.download(sample.id)
+        else:
+            do.download(sample.id)
     elif sample.owner == ME and value_sample(sample) == BAD_SAMPLE:
         do.upload(sample.id)
         upload_count = 1
-        #OPTIMIZE: Find better thing to do with bad samples than upload (maybe continue but ignore sample for now)
     return upload_count
 
 
@@ -169,9 +173,16 @@ def handle_lab():
     if len(me.samples) == 1:
         go.samples()
         return None
+    chosen = next(filter(lambda sample: sample.id != chosen_sample, me.samples))
+    remaining_molecules = calculate_remaining_molecules()
+    debug(f'Sample {chosen.id}: {value_sample(chosen)}')
+    debug(f'remainig mols: {remaining_molecules}')
+    if value_sample(chosen) == BAD_SAMPLE:
+        go.diagnosis()
+        do.upload(chosen.id)
+        return None
     go.molecules()
-    return next(filter(lambda sample: sample.id != chosen_sample, me.samples)).id
-    #FIXME: consider remaining molecules and upload sample if unavailable
+    return chosen.id
 
 
 def decompress_histogram_into_str(d):
@@ -188,13 +199,13 @@ def get_my_sample(id):
     return None
 
 
-def get_player_input(i):
-    temp = input().split()
-    player = Player(i)
-    player.target = temp.pop(0)
+def get_player_input(id):
+    raw_input = input().split()
+    player = Player(id)
+    player.target = raw_input.pop(0)
     player.eta, player.score, player.storage['A'], player.storage['B'], player.storage['C'], \
     player.storage['D'], player.storage['E'], player.expertise['A'], player.expertise['B'], \
-    player.expertise['C'], player.expertise['D'], player.expertise['E'] = map(int, temp)
+    player.expertise['C'], player.expertise['D'], player.expertise['E'] = map(int, raw_input)
     return player
 
 
@@ -202,10 +213,10 @@ def get_sample_input():
     sample_count = int(input())
     samples = [Sample() for _ in range(sample_count)]
     for i in range(sample_count):
-        temp = input().split()
-        samples[i].expertise_gain = temp.pop(3)
+        raw_input = input().split()
+        samples[i].expertise_gain = raw_input.pop(3)
         samples[i].id, samples[i].owner, samples[i].rank, samples[i].health, samples[i].cost['A'], samples[i].cost['B'], \
-        samples[i].cost['C'], samples[i].cost['D'], samples[i].cost['E'] = map(int, temp)
+        samples[i].cost['C'], samples[i].cost['D'], samples[i].cost['E'] = map(int, raw_input)
     return samples
 
 
@@ -258,6 +269,3 @@ while True:
 
     # Write an action using print
     # To debug: print("Debug messages...", file=sys.stderr, flush=True)
-
-
-
