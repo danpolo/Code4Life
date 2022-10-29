@@ -183,7 +183,8 @@ def get_sample_value(sample):
     remaining_molecules = calculate_available_molecules()
     molecules_left_for_sample_completion = sum(sample.cost.values())
 
-    if molecules_left_for_sample_completion > MAX_MOLECULES:
+    inventory_left = MAX_MOLECULES - sum(me.storage.values())
+    if molecules_left_for_sample_completion > inventory_left:
         return BAD_SAMPLE
 
     for molecule in MOLECULES_LIST:
