@@ -205,7 +205,7 @@ def get_sample_value(sample):
     remaining_molecules = calculate_available_molecules()
     molecules_left_for_sample_completion = get_molecules_left_for_sample_completion(sample)
 
-    if molecules_left_for_sample_completion > MAX_MOLECULES:
+    if molecules_left_for_sample_completion + sum(me.storage.values()) > MAX_MOLECULES:
         return BAD_SAMPLE
 
     for molecule in MOLECULES_LIST:
@@ -215,7 +215,6 @@ def get_sample_value(sample):
     steal_threshold = get_potentially_stolen_molecules(molecules_left_for_sample_completion)
     steal_penalty = get_stealing_penalty(sample.cost, steal_threshold) ** 0.2
 
-    debug(molecules_left_for_sample_completion ** 0.5)
     return (molecules_left_for_sample_completion ** 0.5 + steal_penalty) / sample.health
 
 
