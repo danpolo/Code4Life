@@ -43,8 +43,8 @@ class do:
     def make(id):
         add_command(f'CONNECT {id}')
 
-    def get_sample():
-        add_command('CONNECT 2')
+    def get_sample(rank):
+        add_command(f'CONNECT {rank}')
 
     def wait():
         add_command('WAIT')
@@ -109,8 +109,10 @@ def add_command(command):
 
 
 def handle_samples():
-    for _ in range(MAX_SAMPLES):
-        do.get_sample()
+    do.get_sample(1)
+    for _ in range(MAX_SAMPLES - 1):
+        do.get_sample(2)
+
     go.diagnosis()
 
 
@@ -121,7 +123,8 @@ def handle_diagnosis():
         return None, None
     remaining_molecules = calculate_remaining_molecules()
     best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=value_sample)[:3]
-    my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=value_sample, reverse=True)
+    my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=value_sample,
+                              reverse=True)
     samples_count = len(me.samples)
     for sample in best_samples:
         samples_count -= handle_sample_switching(sample, my_worst_samples)
@@ -129,14 +132,14 @@ def handle_diagnosis():
         go.samples()
         return None, None
     go.molecules()
-    required_molecules = decompress_histogram_into_str(get_my_sample(best_samples[0].id).cost)
+    required_molecules = decompress_histogram_into_str(best_samples[0].cost)
     return best_samples[0].id, required_molecules
 
 
 def calculate_remaining_molecules():
     cheap_enemy_samples = list(filter(lambda sample: sample.rank != 3, enemy.samples))
     for molecule in MOLECULES_LIST:
-        remaining_molecules[molecule] = available_molecules[molecule]
+        remaining_molecules[molecule] = available_molecules[molecule] + me.storage[molecule]
         if is_enemy_stealing_molecules():
             remaining_molecules[molecule] -= max(
                 map(lambda sample: sample.cost[molecule], cheap_enemy_samples), default=0)
@@ -183,19 +186,18 @@ def handle_molecules(required_molecules, chosen_sample_id):
 
 def handle_lab():
     do.make(chosen_sample)
-    if len(me.samples) == 1:
+    samples_left = list(filter(lambda sample: sample.id != chosen_sample, me.samples))
+    if not samples_left:
         go.samples()
-        return None
-    chosen = next(filter(lambda sample: sample.id != chosen_sample, me.samples))
+        return None, None
+    chosen = min(samples_left, key=value_sample)
     remaining_molecules = calculate_remaining_molecules()
-    debug(f'Sample {chosen.id}: {value_sample(chosen)}')
-    debug(f'remainig mols: {remaining_molecules}')
     if value_sample(chosen) == BAD_SAMPLE:
         go.diagnosis()
-        #do.upload(chosen.id)
-        return None
+        return None, None
     go.molecules()
-    return chosen.id
+    required_molecules = decompress_histogram_into_str(chosen.cost)
+    return chosen.id, required_molecules
 
 
 def decompress_histogram_into_str(d):
@@ -274,7 +276,7 @@ while True:
         required_molecules_queue = handle_molecules(required_molecules_queue, chosen_sample)
         debug('------3------')
     elif me.target == 'LABORATORY':
-        chosen_sample = handle_lab()
+        chosen_sample, required_molecules_queue = handle_lab()
         debug('------4------')
 
     debug(f'COMMAND QUEUE: {command_queue}')
