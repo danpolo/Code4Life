@@ -67,16 +67,17 @@ class Player:
 
     def update_samples(self):
         self.samples = list(filter(lambda x: x.owner == self.id, samples))
-        for sample in self.samples:
-            self.update_sample_cost(sample)
+        #for sample in self.samples:
+        #    self.update_sample_cost(sample)
         self.diagnosed_samples = list(filter(lambda x: x.health != NO_DATA, self.samples))
         self.undiagnosed_samples = list(filter(lambda x: x.health == NO_DATA, self.samples))
-
+    """
     def update_sample_cost(self, sample):
         for molecule in MOLECULES_LIST:
             sample.cost[molecule] -= self.expertise[molecule]
             if sample.cost[molecule] < 0:
                 sample.cost[molecule] = 0
+    """
 
 
 class Sample:
@@ -90,6 +91,16 @@ class Sample:
 
     def __repr__(self):
         return f'Sample {self.id} Carried by {self.owner} Gives {self.health} Points.\nCosts: {self.cost}\n'
+
+    def update_sample_cost(self):
+        for molecule in MOLECULES_LIST:
+            if self.owner == ENEMY:
+                self.cost[molecule] -= enemy.expertise[molecule]
+            else:
+                self.cost[molecule] -= me.expertise[molecule]
+
+            if self.cost[molecule] < 0:
+                self.cost[molecule] = 0
 
 
 def debug(s):
@@ -121,7 +132,6 @@ def handle_diagnosis():
         for sample in me.undiagnosed_samples:
             do.diagnose(sample.id)
         return None, None
-    remaining_molecules = calculate_remaining_molecules()
     best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=value_sample)[:3]
     my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=value_sample,
                               reverse=True)
@@ -137,6 +147,7 @@ def handle_diagnosis():
 
 
 def calculate_remaining_molecules():
+    remaining_molecules = dict(MOLECULES_DICT)
     cheap_enemy_samples = list(filter(lambda sample: sample.rank != 3, enemy.samples))
     for molecule in MOLECULES_LIST:
         remaining_molecules[molecule] = available_molecules[molecule] + me.storage[molecule]
@@ -151,6 +162,9 @@ def is_enemy_stealing_molecules():
 
 
 def value_sample(sample):
+    remaining_molecules = calculate_remaining_molecules()
+    if sum(sample.cost.values()) > MAX_MOLECULES:
+        return BAD_SAMPLE
     for molecule in MOLECULES_LIST:
         if sample.cost[molecule] > remaining_molecules[molecule]:
             return BAD_SAMPLE
@@ -175,7 +189,6 @@ def handle_molecules(required_molecules, chosen_sample_id):
     if not required_molecules:
         go.lab()
         return None
-    remaining_molecules = calculate_remaining_molecules()
     if value_sample(get_my_sample(chosen_sample_id)) == BAD_SAMPLE:
         do.wait()
         return required_molecules
@@ -191,7 +204,6 @@ def handle_lab():
         go.samples()
         return None, None
     chosen = min(samples_left, key=value_sample)
-    remaining_molecules = calculate_remaining_molecules()
     if value_sample(chosen) == BAD_SAMPLE:
         go.diagnosis()
         return None, None
@@ -241,7 +253,6 @@ available_molecules = dict(MOLECULES_DICT)
 command_queue = []
 go.samples()
 chosen_sample = None
-remaining_molecules = MOLECULES_DICT
 required_molecules_queue = ''
 
 # game loop
@@ -250,6 +261,8 @@ while True:
     enemy = get_player_input(ENEMY)
     available_molecules = dict(zip(MOLECULES_LIST, list(map(int, input().split()))))
     samples = get_sample_input()
+    for sample in samples:
+        sample.update_sample_cost()
     me.update_samples()
     enemy.update_samples()
 
