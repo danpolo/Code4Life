@@ -138,11 +138,27 @@ def should_take_type_3():
     return sum(me.expertise.values()) >= 5
 
 
+def is_all_samples_bad():
+    all_samples = list(filter(lambda sample: sample.owner != ENEMY, samples))
+    return reduce(lambda x, sample: x and get_sample_value(sample) == BAD_SAMPLE, all_samples)
+
+
+def upload_all_samples():
+    for sample in me.samples:
+        do.upload(sample.id)
+
+
 def handle_diagnosis():
     if me.undiagnosed_samples:
         for sample in me.undiagnosed_samples:
             do.diagnose(sample.id)
         return
+
+    if is_all_samples_bad():
+        upload_all_samples()
+        go.samples()
+        return
+
     best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=get_sample_value)[:3]
     my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=get_sample_value,
                               reverse=True)
@@ -157,7 +173,6 @@ def handle_diagnosis():
 
 def calculate_available_molecules():
     all_available_molecules = dict(MOLECULES_DICT)
-    # cheap_enemy_samples = list(filter(lambda sample: sample.rank != 3, enemy.samples))
     for molecule in MOLECULES_LIST:
         all_available_molecules[molecule] = available_molecules[molecule] + me.storage[molecule]
     return all_available_molecules
@@ -179,12 +194,18 @@ def get_stealing_penalty(sample_cost, steal_threshold):
     return penalty
 
 
+def get_molecules_left_for_sample_completion(sample):
+    molecules_left_dict = dict(sample.cost)
+    for molecule in MOLECULES_LIST:
+        molecules_left_dict[molecule] = max(molecules_left_dict[molecule] - me.storage[molecule], 0)
+    return sum(molecules_left_dict.values())
+
+
 def get_sample_value(sample):
     remaining_molecules = calculate_available_molecules()
-    molecules_left_for_sample_completion = sum(sample.cost.values())
+    molecules_left_for_sample_completion = get_molecules_left_for_sample_completion(sample)
 
-    inventory_left = MAX_MOLECULES - sum(me.storage.values())
-    if molecules_left_for_sample_completion > inventory_left:
+    if molecules_left_for_sample_completion > MAX_MOLECULES:
         return BAD_SAMPLE
 
     for molecule in MOLECULES_LIST:
@@ -194,6 +215,7 @@ def get_sample_value(sample):
     steal_threshold = get_potentially_stolen_molecules(molecules_left_for_sample_completion)
     steal_penalty = get_stealing_penalty(sample.cost, steal_threshold) ** 0.2
 
+    debug(molecules_left_for_sample_completion ** 0.5)
     return (molecules_left_for_sample_completion ** 0.5 + steal_penalty) / sample.health
 
 
@@ -218,8 +240,7 @@ def handle_molecules():
         return
 
     if get_sample_value(chosen_sample) == BAD_SAMPLE:
-        # TODO: instead of wait, choose new sample
-        do.wait()
+        go.diagnosis()
         return
 
     do.collect_molecule(choose_next_molecule(chosen_sample))
@@ -277,7 +298,6 @@ def get_my_sample(id):
 
 
 def choose_best_sample():
-    debug(f'samples: {me.samples}')
     if not me.samples:
         return "There are no samples"
     return min(me.samples, key=get_sample_value)
