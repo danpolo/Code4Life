@@ -46,6 +46,9 @@ class do:
     def get_sample():
         add_command('CONNECT 2')
 
+    def wait():
+        add_command('WAIT')
+
 
 class Player:
     def __init__(self, id):
@@ -114,20 +117,20 @@ def handle_diagnosis():
     if me.undiagnosed_samples:
         for sample in me.undiagnosed_samples:
             do.diagnose(sample.id)
-        return
+        return None, None
     remaining_molecules = calculate_remaining_molecules()
     best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=value_sample)[:3]
-    my_worst_samples = sorted(me.samples, key=value_sample, reverse=True)
+    my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=value_sample, reverse=True)
     upload_count = len(me.samples)
     debug(upload_count)
     for sample in best_samples:
         upload_count -= handle_sample_switching(sample, my_worst_samples)
     if not upload_count or not me.samples:
         go.samples()
-        return
+        return None, None
     go.molecules()
-    debug(f'CHOSEN: {best_samples[0].id}')
-    return best_samples[0].id
+    required_molecules = decompress_histogram_into_str(get_my_sample(best_samples[0].id).cost)
+    return best_samples[0].id, required_molecules
 
 
 def calculate_remaining_molecules():
@@ -161,11 +164,17 @@ def handle_sample_switching(sample, my_worst_samples):
     return upload_count
 
 
-def handle_molecules():
-    required_molecules = decompress_histogram_into_str(get_my_sample(chosen_sample).cost)
-    for molecule in required_molecules:
-        do.collect_molecule(molecule)
-    go.lab()
+def handle_molecules(required_molecules, chosen_sample_id):
+    if not required_molecules:
+        go.lab()
+        return required_molecules
+    remaining_molecules = calculate_remaining_molecules()
+    if value_sample(get_my_sample(chosen_sample_id)) == BAD_SAMPLE:
+        do.wait()
+        return required_molecules
+
+    do.collect_molecule(required_molecules[0])
+    return required_molecules[1:]
 
 
 def handle_lab():
@@ -179,7 +188,7 @@ def handle_lab():
     debug(f'remainig mols: {remaining_molecules}')
     if value_sample(chosen) == BAD_SAMPLE:
         go.diagnosis()
-        do.upload(chosen.id)
+        #do.upload(chosen.id)
         return None
     go.molecules()
     return chosen.id
@@ -227,6 +236,7 @@ command_queue = []
 go.samples()
 chosen_sample = None
 remaining_molecules = MOLECULES_DICT
+required_molecules_queue = ''
 
 # game loop
 while True:
@@ -254,10 +264,10 @@ while True:
         handle_samples()
         debug('------1------')
     elif me.target == 'DIAGNOSIS':
-        chosen_sample = handle_diagnosis()
+        chosen_sample, required_molecules_queue = handle_diagnosis()
         debug('------2------')
     elif me.target == 'MOLECULES':
-        handle_molecules()
+        required_molecules_queue = handle_molecules(required_molecules_queue, chosen_sample)
         debug('------3------')
     elif me.target == 'LABORATORY':
         chosen_sample = handle_lab()
