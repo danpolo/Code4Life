@@ -67,7 +67,8 @@ class Player:
 
     def update_samples(self):
         self.samples = list(filter(lambda x: x.owner == self.id, samples))
-        list(map(self.update_sample_cost, self.samples))
+        for sample in self.samples:
+            self.update_sample_cost(sample)
         self.diagnosed_samples = list(filter(lambda x: x.health != NO_DATA, self.samples))
         self.undiagnosed_samples = list(filter(lambda x: x.health == NO_DATA, self.samples))
 
@@ -121,11 +122,10 @@ def handle_diagnosis():
     remaining_molecules = calculate_remaining_molecules()
     best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=value_sample)[:3]
     my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=value_sample, reverse=True)
-    upload_count = len(me.samples)
-    debug(upload_count)
+    samples_count = len(me.samples)
     for sample in best_samples:
-        upload_count -= handle_sample_switching(sample, my_worst_samples)
-    if not upload_count or not me.samples:
+        samples_count -= handle_sample_switching(sample, my_worst_samples)
+    if not samples_count or not me.samples:
         go.samples()
         return None, None
     go.molecules()
@@ -137,10 +137,14 @@ def calculate_remaining_molecules():
     cheap_enemy_samples = list(filter(lambda sample: sample.rank != 3, enemy.samples))
     for molecule in MOLECULES_LIST:
         remaining_molecules[molecule] = available_molecules[molecule]
-        if (enemy.target == 'DIAGNOSIS' and enemy.eta == 0) or enemy.target == 'MOLECULES':
+        if is_enemy_stealing_molecules():
             remaining_molecules[molecule] -= max(
-                list(map(lambda sample: sample.cost[molecule], cheap_enemy_samples)), default=0)
+                map(lambda sample: sample.cost[molecule], cheap_enemy_samples), default=0)
     return remaining_molecules
+
+
+def is_enemy_stealing_molecules():
+    return (enemy.target == 'DIAGNOSIS' and enemy.eta == 0) or enemy.target == 'MOLECULES'
 
 
 def value_sample(sample):
@@ -167,7 +171,7 @@ def handle_sample_switching(sample, my_worst_samples):
 def handle_molecules(required_molecules, chosen_sample_id):
     if not required_molecules:
         go.lab()
-        return required_molecules
+        return None
     remaining_molecules = calculate_remaining_molecules()
     if value_sample(get_my_sample(chosen_sample_id)) == BAD_SAMPLE:
         do.wait()
