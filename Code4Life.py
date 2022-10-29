@@ -18,7 +18,7 @@ DIAGNOSIS = 'DIAGNOSIS'
 SAMPLES = 'SAMPLES'
 
 
-#TODO: go(LABORATORY)
+# TODO: go(LABORATORY)
 class go:
     def samples():
         add_command(f'GOTO  {SAMPLES}')
@@ -63,6 +63,7 @@ def get_distance(first_location, second_location):
         return 4
     return 3
 
+
 class Player:
     def __init__(self, id):
         self.id = id
@@ -105,8 +106,7 @@ class Sample:
             else:
                 self.cost[molecule] -= me.expertise[molecule]
 
-            if self.cost[molecule] < 0:
-                self.cost[molecule] = 0
+            self.cost[molecule] = max(self.cost[molecule], 0)
 
 
 def debug(s):
@@ -126,11 +126,16 @@ def add_command(command):
 
 
 def handle_samples():
-    do.get_sample(1)
-    for _ in range(MAX_SAMPLES - 1):
-        do.get_sample(2)
+    sample_type = 3 if should_take_type_3() else 2
+
+    for _ in range(MAX_SAMPLES):
+        do.get_sample(sample_type)
 
     go.diagnosis()
+
+
+def should_take_type_3():
+    return sum(me.expertise.values()) >= 5
 
 
 def handle_diagnosis():
@@ -188,7 +193,7 @@ def get_sample_value(sample):
     steal_threshold = get_potentially_stolen_molecules(molecules_left_for_sample_completion)
     steal_penalty = get_stealing_penalty(sample.cost, steal_threshold) ** 0.2
 
-    return (molecules_left_for_sample_completion + steal_penalty) / sample.health
+    return (molecules_left_for_sample_completion ** 0.5 + steal_penalty) / sample.health
 
 
 def handle_sample_switching(sample, my_worst_samples):
@@ -200,9 +205,7 @@ def handle_sample_switching(sample, my_worst_samples):
         else:
             do.download(sample.id)
             upload_count = -1
-    elif sample.owner == ME and get_sample_value(sample) == BAD_SAMPLE:
-        do.upload(sample.id)
-        upload_count = 1
+
     return upload_count
 
 
@@ -347,4 +350,3 @@ while True:
     debug(f'COMMAND QUEUE: {command_queue}')
 
     print(command_queue.pop(0))
-
