@@ -12,19 +12,25 @@ MAX_SAMPLES = 3
 MAX_MOLECULES = 10
 BAD_SAMPLE = 10
 
+MOLECULES = 'MOLECULES'
+LABORATORY = 'LABORATORY'
+DIAGNOSIS = 'DIAGNOSIS'
+SAMPLES = 'SAMPLES'
 
+
+#TODO: go(LABORATORY)
 class go:
     def samples():
-        add_command('GOTO  SAMPLES')
+        add_command(f'GOTO  {SAMPLES}')
 
     def diagnosis():
-        add_command('GOTO  DIAGNOSIS')
+        add_command(f'GOTO  {DIAGNOSIS}')
 
     def molecules():
-        add_command('GOTO MOLECULES')
+        add_command(f'GOTO {MOLECULES}')
 
     def lab():
-        add_command('GOTO LABORATORY')
+        add_command(f'GOTO {LABORATORY}')
 
 
 class do:
@@ -50,6 +56,13 @@ class do:
         add_command('WAIT')
 
 
+def get_distance(first_location, second_location):
+    if first_location == second_location:
+        return 0
+    if {first_location, second_location} == {MOLECULES, DIAGNOSIS}:
+        return 4
+    return 3
+
 class Player:
     def __init__(self, id):
         self.id = id
@@ -71,14 +84,6 @@ class Player:
         #    self.update_sample_cost(sample)
         self.diagnosed_samples = list(filter(lambda x: x.health != NO_DATA, self.samples))
         self.undiagnosed_samples = list(filter(lambda x: x.health == NO_DATA, self.samples))
-
-    """
-    def update_sample_cost(self, sample):
-        for molecule in MOLECULES_LIST:
-            sample.cost[molecule] -= self.expertise[molecule]
-            if sample.cost[molecule] < 0:
-                sample.cost[molecule] = 0
-    """
 
 
 class Sample:
@@ -133,8 +138,8 @@ def handle_diagnosis():
         for sample in me.undiagnosed_samples:
             do.diagnose(sample.id)
         return
-    best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=value_sample)[:3]
-    my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=value_sample,
+    best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=get_sample_value)[:3]
+    my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=get_sample_value,
                               reverse=True)
     samples_count = len(me.samples)
     for sample in best_samples:
@@ -150,35 +155,51 @@ def calculate_available_molecules():
     # cheap_enemy_samples = list(filter(lambda sample: sample.rank != 3, enemy.samples))
     for molecule in MOLECULES_LIST:
         all_available_molecules[molecule] = available_molecules[molecule] + me.storage[molecule]
-        if is_enemy_stealing_molecules():
-            all_available_molecules[molecule] -= max(
-                map(lambda sample: sample.cost[molecule], enemy.samples), default=0)
     return all_available_molecules
 
 
-def is_enemy_stealing_molecules():
-    return (enemy.target == 'DIAGNOSIS' and enemy.eta == 0) or enemy.target == 'MOLECULES'
+def get_enemy_eta_to_molecules():
+    return get_distance(enemy.target, MOLECULES) + enemy.eta
 
 
-def value_sample(sample):
+def get_potentially_stolen_molecules(molecules_left_for_sample_completion):
+    return max(molecules_left_for_sample_completion - get_enemy_eta_to_molecules(), 0)
+
+
+def get_stealing_penalty(sample_cost, steal_threshold):
+    penalty = 0
+    for molecule in MOLECULES_LIST:
+        effective_cost = sample_cost[molecule] - me.storage[molecule]
+        penalty += max(effective_cost - steal_threshold, 0)
+    return penalty
+
+
+def get_sample_value(sample):
     remaining_molecules = calculate_available_molecules()
-    if sum(sample.cost.values()) > MAX_MOLECULES:
+    molecules_left_for_sample_completion = sum(sample.cost.values())
+
+    if molecules_left_for_sample_completion > MAX_MOLECULES:
         return BAD_SAMPLE
+
     for molecule in MOLECULES_LIST:
         if sample.cost[molecule] > remaining_molecules[molecule]:
             return BAD_SAMPLE
-    return sum(sample.cost.values()) / sample.health
+
+    steal_threshold = get_potentially_stolen_molecules(molecules_left_for_sample_completion)
+    steal_penalty = get_stealing_penalty(sample.cost, steal_threshold) ** 0.2
+
+    return (molecules_left_for_sample_completion + steal_penalty) / sample.health
 
 
 def handle_sample_switching(sample, my_worst_samples):
     upload_count = 0
-    if sample.owner != ME and value_sample(sample) != BAD_SAMPLE:
+    if sample.owner != ME and get_sample_value(sample) != BAD_SAMPLE:
         if my_worst_samples:
             do.upload(my_worst_samples.pop(0).id)
             do.download(sample.id)
         else:
             do.download(sample.id)
-    elif sample.owner == ME and value_sample(sample) == BAD_SAMPLE:
+    elif sample.owner == ME and get_sample_value(sample) == BAD_SAMPLE:
         do.upload(sample.id)
         upload_count = 1
     return upload_count
@@ -191,7 +212,7 @@ def handle_molecules():
         do.make(chosen_sample.id)
         return
 
-    if value_sample(chosen_sample) == BAD_SAMPLE:
+    if get_sample_value(chosen_sample) == BAD_SAMPLE:
         # TODO: instead of wait, choose new sample
         do.wait()
         return
@@ -230,7 +251,7 @@ def handle_lab():
         go.samples()
         return
 
-    if value_sample(choose_best_sample()) == BAD_SAMPLE:
+    if get_sample_value(choose_best_sample()) == BAD_SAMPLE:
         go.diagnosis()
         return
     go.molecules()
@@ -254,7 +275,7 @@ def choose_best_sample():
     debug(f'samples: {me.samples}')
     if not me.samples:
         return "There are no samples"
-    return min(me.samples, key=value_sample)
+    return min(me.samples, key=get_sample_value)
 
 
 def get_player_input(id):
@@ -309,16 +330,16 @@ while True:
         continue
     if command_queue:
         pass
-    elif me.target == 'SAMPLES':
+    elif me.target == SAMPLES:
         handle_samples()
         debug('------1------')
-    elif me.target == 'DIAGNOSIS':
+    elif me.target == DIAGNOSIS:
         handle_diagnosis()
         debug('------2------')
-    elif me.target == 'MOLECULES':
+    elif me.target == MOLECULES:
         handle_molecules()
         debug('------3------')
-    elif me.target == 'LABORATORY':
+    elif me.target == LABORATORY:
         handle_lab()
         debug('------4------')
 
@@ -326,5 +347,3 @@ while True:
 
     print(command_queue.pop(0))
 
-    # Write an action using print
-    # To debug: print("Debug messages...", file=sys.stderr, flush=True)
