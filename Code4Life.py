@@ -67,10 +67,11 @@ class Player:
 
     def update_samples(self):
         self.samples = list(filter(lambda x: x.owner == self.id, samples))
-        #for sample in self.samples:
+        # for sample in self.samples:
         #    self.update_sample_cost(sample)
         self.diagnosed_samples = list(filter(lambda x: x.health != NO_DATA, self.samples))
         self.undiagnosed_samples = list(filter(lambda x: x.health == NO_DATA, self.samples))
+
     """
     def update_sample_cost(self, sample):
         for molecule in MOLECULES_LIST:
@@ -131,7 +132,7 @@ def handle_diagnosis():
     if me.undiagnosed_samples:
         for sample in me.undiagnosed_samples:
             do.diagnose(sample.id)
-        return None, None
+        return
     best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=value_sample)[:3]
     my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=value_sample,
                               reverse=True)
@@ -140,21 +141,19 @@ def handle_diagnosis():
         samples_count -= handle_sample_switching(sample, my_worst_samples)
     if not samples_count or not me.samples:
         go.samples()
-        return None, None
+        return
     go.molecules()
-    required_molecules = decompress_histogram_into_str(best_samples[0].cost)
-    return best_samples[0].id, required_molecules
 
 
-def calculate_remaining_molecules():
-    remaining_molecules = dict(MOLECULES_DICT)
-    cheap_enemy_samples = list(filter(lambda sample: sample.rank != 3, enemy.samples))
+def calculate_available_molecules():
+    all_available_molecules = dict(MOLECULES_DICT)
+    # cheap_enemy_samples = list(filter(lambda sample: sample.rank != 3, enemy.samples))
     for molecule in MOLECULES_LIST:
-        remaining_molecules[molecule] = available_molecules[molecule] + me.storage[molecule]
+        all_available_molecules[molecule] = available_molecules[molecule] + me.storage[molecule]
         if is_enemy_stealing_molecules():
-            remaining_molecules[molecule] -= max(
-                map(lambda sample: sample.cost[molecule], cheap_enemy_samples), default=0)
-    return remaining_molecules
+            all_available_molecules[molecule] -= max(
+                map(lambda sample: sample.cost[molecule], enemy.samples), default=0)
+    return all_available_molecules
 
 
 def is_enemy_stealing_molecules():
@@ -162,7 +161,7 @@ def is_enemy_stealing_molecules():
 
 
 def value_sample(sample):
-    remaining_molecules = calculate_remaining_molecules()
+    remaining_molecules = calculate_available_molecules()
     if sum(sample.cost.values()) > MAX_MOLECULES:
         return BAD_SAMPLE
     for molecule in MOLECULES_LIST:
@@ -185,35 +184,60 @@ def handle_sample_switching(sample, my_worst_samples):
     return upload_count
 
 
-def handle_molecules(required_molecules, chosen_sample_id):
-    if not required_molecules:
+def handle_molecules():
+    chosen_sample = choose_best_sample()
+    if is_sample_ready(chosen_sample):
         go.lab()
-        return None
-    if value_sample(get_my_sample(chosen_sample_id)) == BAD_SAMPLE:
-        do.wait()
-        return required_molecules
+        do.make(chosen_sample.id)
+        return
 
-    do.collect_molecule(required_molecules[0])
-    return required_molecules[1:]
+    if value_sample(chosen_sample) == BAD_SAMPLE:
+        # TODO: instead of wait, choose new sample
+        do.wait()
+        return
+
+    do.collect_molecule(choose_next_molecule(chosen_sample))
+
+
+def is_sample_ready(sample):
+    return choose_next_molecule(sample) is None
+
+
+def choose_next_molecule(sample):
+    required_molecules = dict(sample.cost)
+    for molecule in MOLECULES_LIST:
+        required_molecules[molecule] = max(required_molecules[molecule] - me.storage[molecule], 0)
+
+    required_molecules_str = decompress_histogram_into_list(required_molecules)
+    if not required_molecules_str:
+        return None
+    # TODO: choose molecule based on risk level
+    return required_molecules_str[0]
+
+
+def print_interesting_debug_case():
+    try:
+        prechosen_sample = int(command_queue[0].split()[1])
+        if choose_best_sample().id != prechosen_sample:
+            debug(f'Interesting: while walking towards lab, a different sample became better')
+    except:
+        pass
 
 
 def handle_lab():
-    do.make(chosen_sample)
-    samples_left = list(filter(lambda sample: sample.id != chosen_sample, me.samples))
-    if not samples_left:
+    print_interesting_debug_case()
+    if not me.samples:
         go.samples()
-        return None, None
-    chosen = min(samples_left, key=value_sample)
-    if value_sample(chosen) == BAD_SAMPLE:
+        return
+
+    if value_sample(choose_best_sample()) == BAD_SAMPLE:
         go.diagnosis()
-        return None, None
+        return
     go.molecules()
-    required_molecules = decompress_histogram_into_str(chosen.cost)
-    return chosen.id, required_molecules
 
 
-def decompress_histogram_into_str(d):
-    s = ''
+def decompress_histogram_into_list(d):
+    s = []
     for mol in d:
         s += mol * d[mol]
     return s
@@ -224,6 +248,13 @@ def get_my_sample(id):
     if my_sample:
         return my_sample[0]
     return None
+
+
+def choose_best_sample():
+    debug(f'samples: {me.samples}')
+    if not me.samples:
+        return "There are no samples"
+    return min(me.samples, key=value_sample)
 
 
 def get_player_input(id):
@@ -252,7 +283,6 @@ projects = init_projects()
 available_molecules = dict(MOLECULES_DICT)
 command_queue = []
 go.samples()
-chosen_sample = None
 required_molecules_queue = ''
 
 # game loop
@@ -271,7 +301,7 @@ while True:
     debug(f'EXPERTISE: {me.expertise}')
     debug(f'MY STORAGE: {me.storage}')
     debug(f'ENEMY STORAGE: {enemy.storage}')
-    debug(f'CHOSEN SAMPLE: {get_my_sample(chosen_sample)}')
+    debug(f'CHOSEN SAMPLE: {choose_best_sample()}')
     debug(f'MY SAMPLES: {me.samples}')
 
     if me.eta > 0:
@@ -283,13 +313,13 @@ while True:
         handle_samples()
         debug('------1------')
     elif me.target == 'DIAGNOSIS':
-        chosen_sample, required_molecules_queue = handle_diagnosis()
+        handle_diagnosis()
         debug('------2------')
     elif me.target == 'MOLECULES':
-        required_molecules_queue = handle_molecules(required_molecules_queue, chosen_sample)
+        handle_molecules()
         debug('------3------')
     elif me.target == 'LABORATORY':
-        chosen_sample, required_molecules_queue = handle_lab()
+        handle_lab()
         debug('------4------')
 
     debug(f'COMMAND QUEUE: {command_queue}')
