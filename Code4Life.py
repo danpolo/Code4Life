@@ -199,6 +199,7 @@ def handle_sample_switching(sample, my_worst_samples):
             do.download(sample.id)
         else:
             do.download(sample.id)
+            upload_count = -1
     elif sample.owner == ME and get_sample_value(sample) == BAD_SAMPLE:
         do.upload(sample.id)
         upload_count = 1
