@@ -1,3 +1,4 @@
 1. tactic
 2. bonus on expertise
 3. refactor update expertise cost in get sample value
+4. science projects

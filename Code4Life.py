@@ -11,6 +11,7 @@ MOLECULES_DICT = dict(zip(MOLECULES_LIST, [0] * 5))
 MAX_SAMPLES = 3
 MAX_MOLECULES = 10
 BAD_SAMPLE = 10
+PROJECT_BONUS = 50
 
 MOLECULES = 'MOLECULES'
 LABORATORY = 'LABORATORY'
@@ -97,7 +98,8 @@ class Sample:
         self.cost = dict(MOLECULES_DICT)
 
     def __repr__(self):
-        return f'Sample {self.id} Carried by {self.owner} Gives {self.health} Points.\nCosts: {self.cost}\n'
+        return f'Sample {self.id} Carried by {self.owner} Gives {self.health} Points ' \
+               f'and {self.expertise_gain} Expertise.\nCosts: {self.cost}\n'
 
     def update_sample_cost(self):
         for molecule in MOLECULES_LIST:
@@ -109,15 +111,31 @@ class Sample:
             self.cost[molecule] = max(self.cost[molecule], 0)
 
 
+class Project:
+    def __init__(self):
+        self.cost = dict(MOLECULES_DICT)
+        self.molecules_left = dict(MOLECULES_DICT)
+
+    def update_molecules_left(self):
+        for molecule in MOLECULES_LIST:
+            self.molecules_left[molecule] = max(self.cost[molecule] - me.expertise[molecule], 0)
+
+    def __repr__(self):
+        return f'Project Cost: {self.cost}\n'
+
+
 def debug(s):
     sys.stderr.write(f'{s}\n')
 
 
-def init_projects():
+def get_projects_input():
     projects = []
     project_count = int(input())
     for i in range(project_count):
-        projects.append(dict(zip(MOLECULES_LIST, list(map(int, input().split())))))  # ))))))))))))))))
+        project = Project()
+        project.cost = dict(zip(MOLECULES_LIST, list(map(int, input().split()))))  # ))))))))))))))))
+        project.molecules_left = dict(project.cost)
+        projects.append(project)
     return projects
 
 
@@ -162,10 +180,17 @@ def handle_diagnosis():
     best_samples = sorted(filter(lambda sample: sample.owner != ENEMY, samples), key=get_sample_value)[:3]
     my_worst_samples = sorted([sample for sample in me.samples if sample not in best_samples], key=get_sample_value,
                               reverse=True)
-    samples_count = len(me.samples)
+    # samples_count = len(me.samples)
     for sample in best_samples:
-        samples_count -= handle_sample_switching(sample, my_worst_samples)
-    if not samples_count or not me.samples:
+        if sample.owner == NO_DATA:
+            if len(me.samples) < MAX_SAMPLES:
+                do.download(sample.id)
+            else:
+                do.upload(my_worst_samples[0].id)
+            return
+
+    #    samples_count -= handle_sample_switching(sample, my_worst_samples)
+    if not me.samples:
         go.samples()
         return
     go.molecules()
@@ -201,7 +226,22 @@ def get_molecules_left_for_sample_completion(sample):
     return sum(molecules_left_dict.values())
 
 
+def get_project_bonus(sample):
+    min_molecules_left_for_project_needed_by_sample = 100
+    for project in projects:
+        if project.molecules_left[sample.expertise_gain] > 0:
+            molecules_left_for_current_project = sum(project.molecules_left.values())
+            min_molecules_left_for_project_needed_by_sample =\
+                min(min_molecules_left_for_project_needed_by_sample, molecules_left_for_current_project)
+    if min_molecules_left_for_project_needed_by_sample == 100:
+        return 0
+    return PROJECT_BONUS / (min_molecules_left_for_project_needed_by_sample ** 4)
+
+
 def get_sample_value(sample):
+    if sample.health == NO_DATA:
+        return BAD_SAMPLE
+
     remaining_molecules = calculate_available_molecules()
     molecules_left_for_sample_completion = get_molecules_left_for_sample_completion(sample)
 
@@ -215,7 +255,9 @@ def get_sample_value(sample):
     steal_threshold = get_potentially_stolen_molecules(molecules_left_for_sample_completion)
     steal_penalty = get_stealing_penalty(sample.cost, steal_threshold) ** 0.2
 
-    return (molecules_left_for_sample_completion ** 0.5 + steal_penalty) / sample.health
+    project_bonus = get_project_bonus(sample)
+
+    return (molecules_left_for_sample_completion ** 0.5 + steal_penalty) / (sample.health + project_bonus)
 
 
 def handle_sample_switching(sample, my_worst_samples):
@@ -324,7 +366,7 @@ def get_sample_input():
 
 
 # defining global vars
-projects = init_projects()
+projects = get_projects_input()
 available_molecules = dict(MOLECULES_DICT)
 command_queue = []
 go.samples()
@@ -340,14 +382,17 @@ while True:
         sample.update_sample_cost()
     me.update_samples()
     enemy.update_samples()
+    for project in projects:
+        project.update_molecules_left()
 
     debug(f'MY TARGET: {me.target}')
     debug(f'ARIVING IN {me.eta} TURNS')
     debug(f'EXPERTISE: {me.expertise}')
     debug(f'MY STORAGE: {me.storage}')
     debug(f'ENEMY STORAGE: {enemy.storage}')
+    debug(f'MY SAMPLES: {me.samples}\n')
     debug(f'CHOSEN SAMPLE: {choose_best_sample()}')
-    debug(f'MY SAMPLES: {me.samples}')
+    debug(f'PROJECTS: {projects}')
 
     if me.eta > 0:
         print('WAIT')
